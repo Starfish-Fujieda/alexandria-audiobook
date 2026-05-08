@@ -847,17 +847,26 @@ async def delete_m4b_cover():
 
 @app.post("/api/generate_batch")
 async def generate_batch_endpoint(request: BatchGenerateRequest, background_tasks: BackgroundTasks):
-    """Generate multiple chunks in parallel using configured worker count."""
+    """Generate multiple chunks. In local mode uses native batch API; in external mode uses parallel workers."""
     if process_state["audio"]["running"]:
         raise HTTPException(status_code=400, detail="Audio generation already running")
 
-    # Load worker count from config
+    # Detect local vs external mode and load relevant config
+    use_local_batch = False
     workers = 2
+    batch_seed = -1
+    batch_group_by_type = False
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                workers = max(1, cfg.get("tts", {}).get("parallel_workers", 2))
+                tts_cfg = cfg.get("tts", {})
+                use_local_batch = tts_cfg.get("mode", "external") == "local"
+                workers = max(1, tts_cfg.get("parallel_workers", 2))
+                seed_val = tts_cfg.get("batch_seed")
+                if seed_val is not None and seed_val != "":
+                    batch_seed = int(seed_val)
+                batch_group_by_type = tts_cfg.get("batch_group_by_type", False)
         except (json.JSONDecodeError, ValueError):
             pass
 
@@ -865,7 +874,6 @@ async def generate_batch_endpoint(request: BatchGenerateRequest, background_task
     total = len(indices)
 
     def progress_callback(completed, failed, total):
-        """Update logs with progress."""
         process_state["audio"]["logs"].append(
             f"Progress: {completed + failed}/{total} ({completed} done, {failed} failed)"
         )
@@ -876,13 +884,25 @@ async def generate_batch_endpoint(request: BatchGenerateRequest, background_task
     def task():
         process_state["audio"]["running"] = True
         process_state["audio"]["cancel"] = False
-        process_state["audio"]["logs"] = [
-            f"Starting parallel generation of {total} chunks with {workers} workers..."
-        ]
+        if use_local_batch:
+            process_state["audio"]["logs"] = [
+                f"Starting batch generation of {total} chunks (local batch, seed={batch_seed})..."
+            ]
+        else:
+            process_state["audio"]["logs"] = [
+                f"Starting parallel generation of {total} chunks with {workers} workers..."
+            ]
         try:
-            results = project_manager.generate_chunks_parallel(
-                indices, workers, progress_callback, cancel_check=cancel_check
-            )
+            if use_local_batch:
+                results = project_manager.generate_chunks_batch(
+                    indices, batch_seed, workers, progress_callback,
+                    batch_group_by_type=batch_group_by_type,
+                    cancel_check=cancel_check,
+                )
+            else:
+                results = project_manager.generate_chunks_parallel(
+                    indices, workers, progress_callback, cancel_check=cancel_check
+                )
             completed = len(results["completed"])
             failed = len(results["failed"])
             cancelled = results.get("cancelled", 0)

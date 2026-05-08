@@ -100,6 +100,20 @@ class ProjectManager:
         self.engine = None
         self._chunks_lock = threading.Lock()  # Thread-safe file writes
 
+    @staticmethod
+    def _strip_markdown(text):
+        """Remove markdown syntax that would be read literally by TTS."""
+        # Headings: # Title -> Title
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        # Bold/italic: ***x***, **x**, *x*, __x__, _x_ -> x
+        text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+        text = re.sub(r'_{1,2}(.+?)_{1,2}', r'\1', text)
+        # Inline code: `x` -> x
+        text = re.sub(r'`(.+?)`', r'\1', text)
+        # Blockquotes: > text -> text
+        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+        return text.strip()
+
     def get_engine(self):
         if self.engine:
             return self.engine
@@ -314,7 +328,7 @@ class ProjectManager:
                     voice_config = json.load(f)
 
             speaker = chunk["speaker"]
-            text = chunk["text"]
+            text = self._strip_markdown(chunk["text"])
             instruct = chunk.get("instruct", "")
 
             print(f"Generating chunk {index}: speaker={speaker}, instruct='{instruct}', text='{text[:50]}...'")

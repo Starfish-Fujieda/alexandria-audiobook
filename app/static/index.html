@@ -2041,15 +2041,15 @@
                     }
 
                     try {
-                        await loadChunks(false);
                         const updated = await API.get('/api/chunks');
-                        const stillGenerating = updated.filter(c =>
-                            indices.includes(c.id) && c.status === 'generating'
-                        );
+                        // Force-update every batch chunk in the DOM regardless of cached state
+                        updated.filter(c => indices.includes(c.id)).forEach(c => updateChunkRow(c));
+                        cachedChunks = updated;
 
-                        if (stillGenerating.length === 0) {
+                        // Stop when the server reports the batch job is finished
+                        const audioStatus = await API.get('/api/status/audio');
+                        if (!audioStatus.running) {
                             clearInterval(pollInterval);
-                            // Clear highlights
                             document.querySelectorAll('tr').forEach(r => r.classList.remove('table-info'));
                             cancelRender(true);
                             await loadChunks(false);
@@ -2116,13 +2116,14 @@
                     }
 
                     try {
-                        await loadChunks(false);
                         const updated = await API.get('/api/chunks');
-                        const stillGenerating = updated.filter(c =>
-                            indices.includes(c.id) && c.status === 'generating'
-                        );
+                        // Force-update every batch chunk in the DOM regardless of cached state
+                        updated.filter(c => indices.includes(c.id)).forEach(c => updateChunkRow(c));
+                        cachedChunks = updated;
 
-                        if (stillGenerating.length === 0) {
+                        // Stop when the server reports the batch job is finished
+                        const audioStatus = await API.get('/api/status/audio');
+                        if (!audioStatus.running) {
                             clearInterval(pollInterval);
                             document.querySelectorAll('tr').forEach(r => r.classList.remove('table-info'));
                             cancelRender(true);
