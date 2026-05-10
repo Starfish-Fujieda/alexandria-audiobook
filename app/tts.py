@@ -661,7 +661,7 @@ class TTSEngine:
             instruct=description,
             language=lang,
             non_streaming_mode=True,
-            max_new_tokens=2048,
+            max_new_tokens=self._max_new_tokens_for(sample_text),
         )
         gen_time = time.time() - t_start
 
@@ -803,7 +803,7 @@ class TTSEngine:
                 text=text,
                 voice_clone_prompt=prompt,
                 non_streaming_mode=True,
-                max_new_tokens=2048,
+                max_new_tokens=self._max_new_tokens_for(text),
                 **gen_extra,
             )
             gen_time = time.time() - t_start
@@ -992,7 +992,7 @@ class TTSEngine:
                 speaker=voice,
                 instruct=instruct,
                 non_streaming_mode=True,
-                max_new_tokens=2048,
+                max_new_tokens=self._max_new_tokens_for(text),
             )
             gen_time = time.time() - t_start
 
@@ -1041,7 +1041,7 @@ class TTSEngine:
                 text=text,
                 voice_clone_prompt=prompt,
                 non_streaming_mode=True,
-                max_new_tokens=2048,
+                max_new_tokens=self._max_new_tokens_for(text),
             )
             gen_time = time.time() - t_start
 
@@ -1156,7 +1156,7 @@ class TTSEngine:
                     speaker=sb_speakers,
                     instruct=sb_instructs,
                     non_streaming_mode=True,
-                    max_new_tokens=2048,
+                    max_new_tokens=self._max_new_tokens_for(sb_texts),
                 )
                 gen_time = time.time() - t_start
 
@@ -1269,7 +1269,7 @@ class TTSEngine:
                         text=sb_texts,
                         voice_clone_prompt=prompt,
                         non_streaming_mode=True,
-                        max_new_tokens=2048,
+                        max_new_tokens=self._max_new_tokens_for(sb_texts),
                     )
                     gen_time = time.time() - t_start
 
@@ -1446,7 +1446,7 @@ class TTSEngine:
                         text=sb_texts,
                         voice_clone_prompt=prompt,
                         non_streaming_mode=True,
-                        max_new_tokens=2048,
+                        max_new_tokens=self._max_new_tokens_for(sb_texts),
                         **gen_extra,
                     )
                     gen_time = time.time() - t_start
@@ -1620,6 +1620,22 @@ class TTSEngine:
         return results
 
     # ── Utility ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _max_new_tokens_for(texts, chars_per_sec=12.0, codec_hz=12, buffer=2.0, minimum=64):
+        """Estimate max_new_tokens from text length to prevent post-EOS hallucination.
+
+        Qwen3-TTS generates Chinese gibberish after finishing the actual text when
+        max_new_tokens is too large. Sizing it to expected audio duration + headroom
+        cuts off the overrun window where hallucination happens.
+
+        At 12Hz and ~12 chars/sec English speech, 1 char ≈ 1 audio token.
+        buffer=1.5 gives 50% headroom; minimum=512 guards short inputs.
+        """
+        if isinstance(texts, str):
+            texts = [texts]
+        max_chars = max(len(t) for t in texts) if texts else 0
+        return max(int(max_chars / chars_per_sec * codec_hz * buffer) + minimum, minimum)
 
     @staticmethod
     def _save_wav(audio_array, sample_rate, output_path):
